@@ -1,23 +1,7 @@
-.bar
-    rect
-        fill: steelblue
-        .negative&
-            fill: orange
-    &:hover
-        rect
-            fill: brown
-    .y-label
-        font: 10px sans-serif
-        .positive&
-            text-anchor: end
-        .negative&
-            text-anchor: start
+svg
+	shape-rendering: geometricPrecision
 
-.axis
-    font: 10px sans-serif
-    line
-        fill: none
-        stroke: #000
-        shape-rendering: crispEdges
-    path
-        display: none
+
+.series:hover, .series.hover
+	&:not(.seriesundefined)
+		fill: #000 !important

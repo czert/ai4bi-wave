@@ -2,9 +2,16 @@ import d3 from 'd3'
 import R from 'ramda'
 import stories from './data.json'
 import './main.styl'
+import $ from 'jquery'
 
 
-window.d3 = d3; window.R = R;
+window.d3 = d3; window.R = R; window.$ = $;
+
+
+const sum = R.reduce(R.add, 0)
+const square = x => x * x
+const rms = list => Math.sqrt(sum(R.map(square, list)) / list.length)
+
 
 export default function main() {
     let data = R.compose(
@@ -20,27 +27,38 @@ export default function main() {
 	)(stories)
 
 	const stack = d3.layout.stack().offset('zero')
+	const sort = R.sortBy(series => rms(R.map(R.prop('y'), series)))
 
-	const positive = stack(R.map(
+	let positive = R.map(
 		R.compose(
 			R.take(10),
 			R.map(
 				({value, reference_date}) => ({x: new Date(reference_date), y: value > 0 ? value : 0})
 			)
 		)
-	)(data))
+	)(data)
+	positive = R.mapAccum((counter, series) => [counter + 1, R.map(item => R.merge(item, {series: counter}), series)], 0, positive)[1]
+	positive = R.reverse(sort(positive))
+	let rest = R.takeLastWhile(s => rms(R.map(R.prop('y'), s)) < 100000, positive)
+	positive = R.slice(0, -1 * rest.length, positive)
+	positive.push(R.map(col => ({x: col[0].x, y: sum(R.map(R.prop('y'), col))}), R.transpose(rest)))
+	positive = stack(positive)
 
-	const negative = stack(R.map(
+
+	let negative = R.map(
 		R.compose(
 			R.take(10),
 			R.map(
 				({value, reference_date}) => ({x: new Date(reference_date), y: value < 0 ? -1 * value : 0})
 			)
 		)
-	)(data))
-
-	console.log(d3.max(R.unnest(positive), R.prop('y')))
-	console.log(d3.min(R.unnest(negative), R.prop('y')))
+	)(data)
+	negative = R.mapAccum((counter, series) => [counter + 1, R.map(item => R.merge(item, {series: counter}), series)], 0, negative)[1]
+	negative = R.reverse(sort(negative))
+	let rest_neg = R.takeLastWhile(s => rms(R.map(R.prop('y'), s)) < 100000, negative)
+	negative = R.slice(0, -1 * rest_neg.length, negative)
+	negative.push(R.map(col => ({x: col[0].x, y: sum(R.map(R.prop('y'), col))}), R.transpose(rest_neg)))
+	negative = stack(negative)
 
 	window.data = data;
 	window.positive = positive;
@@ -72,6 +90,11 @@ export default function main() {
 			)
 			.range([height * pos_max / (pos_max + neg_max), 0])
 
+
+	const pixel = y.invert(0) - y.invert(1)
+	positive = R.map(R.map(point => R.merge(point, {y: point.y + pixel})))(positive)
+	negative = R.map(R.map(point => R.merge(point, {y0: point.y0 - pixel, y: point.y + pixel})))(negative)
+
 	var y_neg = d3.scale.linear()
 			.domain(
 				[
@@ -81,8 +104,8 @@ export default function main() {
 			)
 			.range([height * pos_max / (pos_max + neg_max), height])
 
-	var color = d3.scale.linear().range(["#ac3", "#3ca"])
-	var color_neg = d3.scale.linear().range(["#c93", "#c39"])
+	var color = d3.scale.linear().range(["#0d3c55", "#117899"])
+	var color_neg = d3.scale.linear().range(["#f16c20", "#c03e1d"])
 
 	const interpolation_method = 'monotone'
 
@@ -106,81 +129,39 @@ export default function main() {
 	var g_neg = svg.append('g')
 
 	g_pos.selectAll("path")
-	    .data(stack(positive))
+	    .data(positive)
 		.enter().append("path")
+	    .attr('class', (series) => 'positive series series' + series[0].series)
+	    .attr('data-series-index', (series) => series[0].series)
 	    .attr("d", area)
-	    .style("fill", function() { return color(Math.random()); });
+	    .style("fill", (series, i) => {
+			if (i < positive.length - 1)
+				return color((i % 2 ? (i/2) : (i/2 + positive.length / 2)) / positive.length)
+				//return color((i^1) / positive.length)
+				//return color((rms(R.map(R.prop('y'), series)) % 100) / 100)
+			else
+				return '#ddd'
+		});
 
 	g_neg.selectAll("path")
-	    .data(stack(negative))
+	    .data(negative)
 		.enter().append("path")
+	    .attr('class', (series) => 'negative series series' + series[0].series)
+	    .attr('data-series-index', (series) => series[0].series)
 	    .attr("d", area_neg)
-	    .style("fill", function() { return color_neg(Math.random()); });
+	    .style("fill", (series, i) => {
+			if (i < negative.length - 1)
+				return color_neg((i % 2 ? (i/2) : (i/2 + negative.length / 2)) / negative.length)
+				//return color_neg(i / negative.length)
+			else
+				return '#ddd'
+		});
 
-	return;
+	$('svg').on('mouseenter', '.series', e => {
+		$('svg path.series.series' + $(e.target).data('series-index')).addClass('hover')
+	})
+	$('svg').on('mouseleave', '.series', e => {
+		$('svg path.series.series' + $(e.target).data('series-index')).removeClass('hover')
+	})
 
-
-
-
-
-
-
-
-
-
-	/*
-    const key_accessor = R.prop('element')
-    const value_accessor = R.prop('value')
-
-
-    const target_height = 13;
-
-
-    const margin = {top: 20, right: 20, bottom: 30, left: 40}
-    const width = 960 - margin.left - margin.right
-    const height = target_height / 0.9 * data.length;
-
-    const x = d3.scale.linear().range([0, width])
-
-    const y = d3.scale.ordinal().rangeRoundBands([0, height], .1)
-
-    const xAxis = d3.svg.axis()
-        .scale(x)
-        .orient('top')
-        .ticks(6)
-
-    const negative = d => value_accessor(d) < 0
-
-
-    const svg = d3.select('body').append('svg')
-        .attr('width', width + margin.left + margin.right)
-        .attr('height', height + margin.top + margin.bottom)
-        .append('g')
-        .attr('transform', 'translate(' + margin.left + ',' + margin.top + ')')
-
-
-    x.domain(d3.extent(data, value_accessor))
-    y.domain(data.map(key_accessor))
-
-    svg.append('g')
-        .attr('class', 'x axis')
-        .call(xAxis)
-
-    const bar = svg.selectAll('.bar')
-        .data(data)
-        .enter().append('g')
-        .attr('class', d => 'bar ' + (negative(d) ? 'negative' : 'positive'))
-        .attr('transform', d => 'translate(' + x(0) + ',' + y(key_accessor(d)) + ')')
-
-    bar.append('rect')
-        .attr('width', d => R.compose(x, Math.abs, value_accessor)(d) - x(0))
-        .attr('height', y.rangeBand())
-        .attr('x', d => negative(d) ? x(value_accessor(d)) - x(0) : 0)
-
-    bar.append('text')
-        .attr('class', 'y-label')
-        .attr('x', d => negative(d) ? 10 : -10)
-        .attr('y', y.rangeBand() * 0.8)
-        .text(key_accessor)
-	 */
 }
